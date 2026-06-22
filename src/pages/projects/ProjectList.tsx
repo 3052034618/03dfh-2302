@@ -1,4 +1,5 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useAppStore } from '@/store';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -12,7 +13,6 @@ import {
   Layers,
   ChevronLeft,
   ChevronRight,
-  X,
   Eye,
 } from 'lucide-react';
 import {
@@ -22,17 +22,12 @@ import {
   Tag,
   Tooltip,
   Popconfirm,
-  Image,
   Avatar,
   Empty,
   message,
-  Pagination,
-  Card,
 } from 'antd';
 import {
   CATEGORY_LABELS,
-  CATEGORY_COLORS,
-  MATERIAL_BRANDS,
   APPLICABLE_PARTS,
   type Project,
   type ProjectCategory,
@@ -51,12 +46,15 @@ const categoryTagColors: Record<ProjectCategory, string> = {
 export default function ProjectList() {
   const projects = useAppStore((s) => s.projects);
   const updateProject = useAppStore((s) => s.updateProject);
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [searchText, setSearchText] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<ProjectCategory | 'all'>('all');
   const [brandFilter, setBrandFilter] = useState<string[]>([]);
   const [partsFilter, setPartsFilter] = useState<string[]>([]);
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+  const highlightRowRef = useRef<HTMLTableRowElement | null>(null);
 
   const [formOpen, setFormOpen] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
@@ -92,6 +90,29 @@ export default function ProjectList() {
   }, [filteredProjects, page]);
 
   const totalPages = Math.ceil(filteredProjects.length / pageSize);
+
+  useEffect(() => {
+    const search = searchParams.get('search');
+    const hId = searchParams.get('highlightId');
+    if (search) {
+      setSearchText(search);
+    }
+    if (hId) {
+      setHighlightId(hId);
+      const newParams = new URLSearchParams(searchParams);
+      newParams.delete('highlightId');
+      setSearchParams(newParams, { replace: true });
+      setTimeout(() => {
+        setHighlightId(null);
+      }, 2000);
+    }
+  }, [searchParams, setSearchParams]);
+
+  useEffect(() => {
+    if (highlightId && highlightRowRef.current) {
+      highlightRowRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [highlightId, paginatedProjects]);
 
   const handleToggleStatus = (project: Project) => {
     const newStatus = project.status === 'active' ? 'inactive' : 'active';
@@ -373,11 +394,16 @@ export default function ProjectList() {
                 </thead>
                 <tbody>
                   <AnimatePresence mode="popLayout">
-                    {paginatedProjects.map((p, idx) => (
+                    {paginatedProjects.map((p) => (
                       <motion.tr
                         key={p.id}
+                        ref={highlightId === p.id ? highlightRowRef : null}
                         variants={itemVariants}
                         layout
+                        animate={highlightId === p.id ? {
+                          backgroundColor: ['rgba(255, 236, 179, 0.8)', 'rgba(255, 255, 255, 1)', 'rgba(255, 236, 179, 0.8)', 'rgba(255, 255, 255, 1)'],
+                          transition: { duration: 2, ease: 'easeInOut' }
+                        } : {}}
                         className={`border-b border-slate-50 hover:bg-brand-gold-50/40 transition-colors ${
                           p.status === 'inactive' ? 'bg-slate-50/50' : ''
                         }`}

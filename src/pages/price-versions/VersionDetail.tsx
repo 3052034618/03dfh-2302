@@ -8,6 +8,8 @@ import {
   InputNumber,
   Modal,
   Form,
+  Input,
+  DatePicker,
   message,
   Space,
   Empty,
@@ -27,6 +29,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useParams, useNavigate } from 'react-router-dom';
+import dayjs from 'dayjs';
 import { useAppStore } from '@/store';
 import {
   VERSION_TYPE_LABELS,
@@ -43,6 +46,7 @@ import {
   type StoreLevel,
   type DoctorLevel,
   type Project,
+  type PricingChangeDetail,
 } from '@/types';
 
 const typeTagColors: Record<VersionType, string> = {
@@ -170,12 +174,30 @@ export default function VersionDetail() {
     try {
       const values = await submitForm.validateFields();
       handleSave();
+
+      const effectiveDate = values.effectiveDate
+        ? values.effectiveDate.format('YYYY-MM-DD')
+        : version.effectiveDate;
+
       const items = Object.keys(localPricing).map((pid) => {
         const project = projects.find((p) => p.id === pid);
         const pricing = localPricing[pid];
         const baseEntry = pricing?.find(
           (e) => e.cityTier === 'tier2' && e.storeLevel === 'standard' && e.doctorLevel === 'attending'
         );
+
+        const pricingChanges: PricingChangeDetail[] = pricing.map((entry) => {
+          const basePrice = project?.basePrice || 0;
+          return {
+            versionId: version.id,
+            cityTier: entry.cityTier as CityTier,
+            storeLevel: entry.storeLevel as StoreLevel,
+            doctorLevel: entry.doctorLevel as DoctorLevel,
+            oldPrice: basePrice,
+            newPrice: entry.price,
+          };
+        });
+
         return {
           id: `${version.id}-${pid}-${Date.now()}`,
           projectId: pid,
@@ -186,19 +208,22 @@ export default function VersionDetail() {
           floorPrice: project?.floorPrice || 0,
           affectedBranches: useAppStore.getState().branches.map((b) => b.id),
           note: '',
+          pricingChanges,
         };
       });
+
       submitApproval({
         title: `${version.name} 价格审批`,
         submitter: currentUser?.name || '系统',
         reason: values.reason,
-        effectiveDate: version.effectiveDate,
+        effectiveDate,
         items,
       });
       updatePriceVersion(version.id, { status: 'pending' });
       message.success('已提交审批');
       setSubmitModalOpen(false);
       submitForm.resetFields();
+      navigate('/approvals');
     } catch {
       // 表单校验失败
     }
@@ -624,40 +649,64 @@ export default function VersionDetail() {
           setSubmitModalOpen(false);
           submitForm.resetFields();
         }}
-        okText="提交"
+        okText="确认提交"
         cancelText="取消"
         width={540}
         okButtonProps={{ className: 'bg-semantic-warning hover:bg-semantic-warning/90' }}
       >
-        <div className="mb-4 space-y-2">
-          <div className="p-3 bg-brand-gold-50/50 rounded-lg text-sm border border-brand-gold-100">
-            <span className="font-medium text-brand-navy-700">{version.name}</span>
-            <span className="mx-2 text-gray-300">|</span>
-            <span className="text-gray-600">
-              共 {Object.keys(localPricing).length} 个项目
-            </span>
-          </div>
-          {belowFloorCount > 0 && (
-            <div className="p-3 bg-red-50 rounded-lg text-sm border border-red-200 flex items-start gap-2">
-              <AlertTriangle className="w-4 h-4 text-semantic-danger flex-shrink-0 mt-0.5" />
-              <span className="text-semantic-danger">
-                检测到 {belowFloorCount} 个定价低于底价，请财务重点审核毛利空间
-              </span>
-            </div>
-          )}
-        </div>
-        <Form form={submitForm} layout="vertical">
-          <Form.Item
-            label="审批说明"
-            name="reason"
-            rules={[{ required: true, message: '请填写审批说明' }]}
+        {version && (
+          <Form
+            form={submitForm}
+            layout="vertical"
+            initialValues={{
+              effectiveDate: version.effectiveDate
+                ? dayjs(version.effectiveDate).isAfter(dayjs())
+                  ? dayjs(version.effectiveDate)
+                  : dayjs().add(7, 'day')
+                : dayjs().add(7, 'day'),
+            }}
           >
-            <textarea
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-brand-navy-500 focus:ring-1 focus:ring-brand-navy-500 transition-all resize-none min-h-[100px]"
-              placeholder="请详细说明价格调整的原因、背景、预期效果、毛利测算等"
+            <Form.Item label="版本名称">
+              <div className="p-3 bg-brand-gold-50/50 rounded-lg text-sm border border-brand-gold-100">
+                <span className="font-medium text-brand-navy-700">{version.name}</span>
+                <span className="mx-2 text-gray-300">|</span>
+                <span className="text-gray-600">
+                  共 {Object.keys(localPricing).length} 个项目
+                </span>
+              </div>
+            </Form.Item>
+            {belowFloorCount > 0 && (
+              <div className="p-3 bg-red-50 rounded-lg text-sm border border-red-200 flex items-start gap-2 mb-4">
+                <AlertTriangle className="w-4 h-4 text-semantic-danger flex-shrink-0 mt-0.5" />
+                <span className="text-semantic-danger">
+                  检测到 {belowFloorCount} 个定价低于底价，请财务重点审核毛利空间
+                </span>
+              </div>
+            )}
+            <Form.Item
+              label="生效日期"
+              name="effectiveDate"
+              rules={[{ required: true, message: '请选择生效日期' }]}
+            >
+              <DatePicker
+              className="w-full"
+              size="large"
+              placeholder="请选择审批通过后的生效日期"
+              disabledDate={(current) => current && current < dayjs().startOf('day')}
             />
-          </Form.Item>
-        </Form>
+            </Form.Item>
+            <Form.Item
+              label="审批原因"
+              name="reason"
+              rules={[{ required: true, message: '请填写审批原因' }]}
+            >
+              <Input.TextArea
+                rows={4}
+                placeholder="请说明本次价格调整的背景和目标..."
+              />
+            </Form.Item>
+          </Form>
+        )}
       </Modal>
 
       <Modal

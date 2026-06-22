@@ -1,4 +1,5 @@
-import { useState, useMemo, useRef } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Select,
   Tabs,
@@ -13,7 +14,6 @@ import {
   Empty,
   Row,
   Col,
-  Avatar,
   Divider,
   Badge,
   Input,
@@ -77,6 +77,7 @@ export default function PricePreview() {
   const getAccessibleBranches = useAppStore((s) => s.getAccessibleBranches);
   const getProjectPriceForBranch = useAppStore((s) => s.getProjectPriceForBranch);
   const priceVersions = useAppStore((s) => s.priceVersions);
+  const [searchParams] = useSearchParams();
 
   const accessibleBranches = useMemo(() => getAccessibleBranches(), [getAccessibleBranches]);
   const isStoreManager = currentUser?.role === 'store-manager';
@@ -89,7 +90,9 @@ export default function PricePreview() {
   const [priceRange, setPriceRange] = useState<[number, number]>([0, 100000]);
   const [viewMode, setViewMode] = useState<ViewMode>('upcoming');
   const [exportingType, setExportingType] = useState<string | null>(null);
+  const [highlightProjectId, setHighlightProjectId] = useState<string | null>(null);
   const printRef = useRef<HTMLDivElement>(null);
+  const highlightCardRef = useRef<HTMLDivElement>(null);
 
   const selectedBranch: Branch | undefined = useMemo(
     () => accessibleBranches.find((b) => b.id === selectedBranchId) || accessibleBranches[0],
@@ -149,6 +152,30 @@ export default function PricePreview() {
     }
     return getProjectPriceForBranch(project.id, selectedBranch.id, effectiveVersion?.id);
   };
+
+  useEffect(() => {
+    const branchId = searchParams.get('branchId');
+    const search = searchParams.get('search');
+    const projectId = searchParams.get('projectId');
+    if (branchId && accessibleBranches.some((b) => b.id === branchId)) {
+      setSelectedBranchId(branchId);
+    }
+    if (search) {
+      setSearchText(search);
+    }
+    if (projectId) {
+      setHighlightProjectId(projectId);
+      setTimeout(() => {
+        setHighlightProjectId(null);
+      }, 2000);
+    }
+  }, [searchParams, accessibleBranches]);
+
+  useEffect(() => {
+    if (highlightProjectId && highlightCardRef.current) {
+      highlightCardRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [highlightProjectId, filteredProjects]);
 
   const categoryCount = useMemo(() => {
     const counts: Record<string, number> = { all: projects.filter((p) => p.status === 'active').length };
@@ -581,7 +608,21 @@ export default function PricePreview() {
 
                       return (
                         <Col xs={24} sm={12} lg={8} xl={6} key={project.id}>
-                          <motion.div variants={cardItem} whileHover={{ y: -4 }}>
+                          <motion.div
+                            ref={highlightProjectId === project.id ? highlightCardRef : null}
+                            variants={cardItem}
+                            whileHover={{ y: -4 }}
+                            animate={highlightProjectId === project.id ? {
+                              boxShadow: [
+                                '0 8px 32px rgba(31, 38, 135, 0.08)',
+                                '0 0 0 4px rgba(251, 191, 36, 0.4), 0 8px 32px rgba(251, 191, 36, 0.3)',
+                                '0 8px 32px rgba(31, 38, 135, 0.08)',
+                                '0 0 0 4px rgba(251, 191, 36, 0.4), 0 8px 32px rgba(251, 191, 36, 0.3)',
+                                '0 8px 32px rgba(31, 38, 135, 0.08)',
+                              ],
+                              transition: { duration: 2, ease: 'easeInOut' }
+                            } : {}}
+                          >
                             <Card
                               hoverable
                               className={`h-full overflow-hidden group border-0 shadow-md shadow-slate-200/60 rounded-2xl ${
@@ -596,7 +637,9 @@ export default function PricePreview() {
                                 WebkitBackdropFilter: 'blur(16px)',
                                 border: hasUpcoming
                                   ? '1px solid rgba(251, 191, 36, 0.3)'
-                                  : '1px solid rgba(255, 255, 255, 0.8)',
+                                  : highlightProjectId === project.id
+                                    ? '2px solid rgba(251, 191, 36, 0.8)'
+                                    : '1px solid rgba(255, 255, 255, 0.8)',
                                 boxShadow: hasUpcoming
                                   ? '0 8px 32px rgba(251, 191, 36, 0.15)'
                                   : '0 8px 32px rgba(31, 38, 135, 0.08)',

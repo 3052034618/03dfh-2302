@@ -278,4 +278,5 @@ export interface SearchResult {
   branchName?: string;
   route: string;
   highlight?: string;
+  filters?: Record<string, string>;
 }

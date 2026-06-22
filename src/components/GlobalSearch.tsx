@@ -2,10 +2,10 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, X, FolderKanban, MapPin, Tag, DollarSign, ChevronRight } from 'lucide-react';
 import { Input } from 'antd';
+import type { InputRef } from 'antd';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAppStore } from '@/store';
 import type { SearchResult, SearchResultType } from '@/types';
-import { CATEGORY_LABELS } from '@/types';
 import { cn } from '@/lib/utils';
 
 const SEARCH_GROUP_CONFIG: Record<SearchResultType, { label: string; icon: typeof FolderKanban; color: string }> = {
@@ -58,8 +58,10 @@ export default function GlobalSearch() {
   const [keyword, setKeyword] = useState('');
   const [debouncedKeyword, setDebouncedKeyword] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const inputRef = useRef<any>(null);
+  const inputRef = useRef<InputRef>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  const isStoreManager = currentUser?.role === 'store-manager';
 
   const searchResults = useMemo(() => {
     return globalSearch(debouncedKeyword, 30);
@@ -121,9 +123,43 @@ export default function GlobalSearch() {
     (result: SearchResult) => {
       setOpen(false);
       setKeyword('');
-      navigate(result.route);
+
+      const params = new URLSearchParams();
+      let targetRoute = result.route;
+
+      switch (result.type) {
+        case 'project': {
+          params.set('search', debouncedKeyword);
+          params.set('highlightId', result.id);
+          targetRoute = '/projects';
+          break;
+        }
+        case 'branch': {
+          params.set('branchId', result.id);
+          targetRoute = '/branches';
+          break;
+        }
+        case 'price': {
+          if (isStoreManager) {
+            params.set('branchId', result.id.split('-')[0]);
+            params.set('search', result.title);
+            targetRoute = '/price-preview';
+          } else {
+            params.set('search', result.title);
+            targetRoute = '/branches';
+          }
+          break;
+        }
+        case 'version': {
+          targetRoute = result.route;
+          break;
+        }
+      }
+
+      const queryString = params.toString();
+      navigate(queryString ? `${targetRoute}?${queryString}` : targetRoute);
     },
-    [navigate]
+    [navigate, debouncedKeyword, isStoreManager]
   );
 
   const handleKeyDown = useCallback(
@@ -154,8 +190,6 @@ export default function GlobalSearch() {
     },
     [open, flatResults, selectedIndex, handleSelect]
   );
-
-  const isStoreManager = currentUser?.role === 'store-manager';
 
   let globalIndex = 0;
 

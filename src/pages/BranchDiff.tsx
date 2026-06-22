@@ -1,4 +1,6 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { Search } from 'lucide-react';
 import {
   Table,
   Button,
@@ -71,6 +73,7 @@ export default function BranchDiff() {
     updateBranchOverride,
     getProjectPriceForBranch,
   } = useAppStore();
+  const [searchParams] = useSearchParams();
 
   const [selectedBranchId, setSelectedBranchId] = useState<string>(branches[0]?.id || '');
   const [expandedCities, setExpandedCities] = useState<Set<string>>(new Set());
@@ -80,6 +83,7 @@ export default function BranchDiff() {
   const [sourceBranchId, setSourceBranchId] = useState<string>('');
   const [targetBranchIds, setTargetBranchIds] = useState<string[]>([]);
   const [hasChanges, setHasChanges] = useState<Record<string, boolean>>({});
+  const [searchText, setSearchText] = useState('');
   const [addForm] = Form.useForm();
 
   const selectedBranch = branches.find((b) => b.id === selectedBranchId);
@@ -112,8 +116,23 @@ export default function BranchDiff() {
 
   const currentOverrides = getBranchOverrides(selectedBranchId);
 
+  useEffect(() => {
+    const branchId = searchParams.get('branchId');
+    const search = searchParams.get('search');
+    if (branchId && branches.some((b) => b.id === branchId)) {
+      setSelectedBranchId(branchId);
+      const branch = branches.find((b) => b.id === branchId);
+      if (branch) {
+        setExpandedCities((prev) => new Set(prev).add(branch.city));
+      }
+    }
+    if (search) {
+      setSearchText(search);
+    }
+  }, [searchParams, branches]);
+
   const overrideRows: OverrideRow[] = useMemo(() => {
-    return currentOverrides.map((o, idx) => {
+    const rows = currentOverrides.map((o, idx) => {
       const project = projects.find((p) => p.id === o.projectId);
       const version = priceVersions.find((v) => v.id === o.versionId);
       const priceResult = selectedBranch
@@ -135,7 +154,10 @@ export default function BranchDiff() {
         note: o.note || '',
       };
     });
-  }, [currentOverrides, projects, priceVersions, selectedBranch, getProjectPriceForBranch]);
+    if (!searchText.trim()) return rows;
+    const kw = searchText.toLowerCase();
+    return rows.filter((r) => r.projectName.toLowerCase().includes(kw));
+  }, [currentOverrides, projects, priceVersions, selectedBranch, getProjectPriceForBranch, searchText]);
 
   const belowFloorCount = overrideRows.filter((r) => r.customPrice < r.floorPrice).length;
 
@@ -673,6 +695,17 @@ export default function BranchDiff() {
                 )}
 
                 <Card className="shadow-card border-gray-100 rounded-2xl overflow-hidden">
+                  <div className="px-6 pt-4 pb-2 border-b border-gray-100">
+                    <Input
+                      prefix={<Search size={16} className="text-slate-400" />}
+                      placeholder="搜索项目名称..."
+                      value={searchText}
+                      onChange={(e) => setSearchText(e.target.value)}
+                      allowClear
+                      size="large"
+                      className="!max-w-sm !rounded-xl"
+                    />
+                  </div>
                   {overrideRows.length > 0 ? (
                     <Table
                       rowKey="key"
