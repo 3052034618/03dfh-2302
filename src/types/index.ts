@@ -105,6 +105,7 @@ export interface PriceOverride {
   customPrice: number;
   effectiveDate: string;
   note?: string;
+  isUpcoming?: boolean;
 }
 
 export interface Branch {
@@ -116,6 +117,7 @@ export interface Branch {
   phone: string;
   address: string;
   priceOverrides: PriceOverride[];
+  upcomingOverrides: PriceOverride[];
 }
 
 export type UserRole = 'hq-admin' | 'finance' | 'store-manager';
@@ -135,16 +137,31 @@ export interface User {
   avatar: string;
 }
 
-export type ApprovalStatus = 'pending' | 'approved' | 'rejected';
+export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'partial';
+export type ApprovalItemStatus = 'pending' | 'approved' | 'rejected';
 
 export const APPROVAL_STATUS_LABELS: Record<ApprovalStatus, string> = {
   pending: '待审批',
   approved: '已通过',
   rejected: '已驳回',
+  partial: '部分通过',
 };
 
 export const APPROVAL_STATUS_COLORS: Record<ApprovalStatus, string> = {
   pending: 'warning',
+  approved: 'success',
+  rejected: 'error',
+  partial: 'processing',
+};
+
+export const APPROVAL_ITEM_STATUS_LABELS: Record<ApprovalItemStatus, string> = {
+  pending: '待审核',
+  approved: '已通过',
+  rejected: '已驳回',
+};
+
+export const APPROVAL_ITEM_STATUS_COLORS: Record<ApprovalItemStatus, string> = {
+  pending: 'default',
   approved: 'success',
   rejected: 'error',
 };
@@ -160,6 +177,17 @@ export interface ApprovalItem {
   affectedBranches: string[];
   note?: string;
   annotation?: string;
+  status: ApprovalItemStatus;
+  pricingChanges: PricingChangeDetail[];
+}
+
+export interface PricingChangeDetail {
+  versionId: string;
+  cityTier: CityTier;
+  storeLevel: StoreLevel;
+  doctorLevel: DoctorLevel;
+  oldPrice: number;
+  newPrice: number;
 }
 
 export interface ApprovalComment {
@@ -237,3 +265,17 @@ export const CONTRAINDICATIONS = [
   '有瘢痕疙瘩病史',
   '糖尿病患者（血糖未控制）',
 ];
+
+export type SearchResultType = 'project' | 'branch' | 'price' | 'version';
+
+export interface SearchResult {
+  type: SearchResultType;
+  id: string;
+  title: string;
+  subtitle: string;
+  category?: string;
+  price?: number;
+  branchName?: string;
+  route: string;
+  highlight?: string;
+}

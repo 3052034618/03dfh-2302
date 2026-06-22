@@ -6,6 +6,10 @@ import type {
   Approval,
   ChangeLog,
   PricingEntry,
+  CityTier,
+  StoreLevel,
+  DoctorLevel,
+  PricingChangeDetail,
 } from '@/types';
 import dayjs from 'dayjs';
 
@@ -322,6 +326,7 @@ export const mockBranches: Branch[] = [
     phone: '021-88886666',
     address: '上海市静安区南京西路1266号恒隆广场3F',
     priceOverrides: [],
+    upcomingOverrides: [],
   },
   {
     id: 'b2',
@@ -335,6 +340,10 @@ export const mockBranches: Branch[] = [
       { projectId: 'p4', versionId: 'v1', customPrice: 27800, effectiveDate: '2026-01-01', note: '开业纪念价' },
       { projectId: 'p5', versionId: 'v1', customPrice: 15800, effectiveDate: '2026-01-01', note: '开业纪念价' },
     ],
+    upcomingOverrides: [
+      { projectId: 'p1', versionId: 'v2', customPrice: 5200, effectiveDate: '2026-07-01', note: '中庆特惠价' },
+      { projectId: 'p2', versionId: 'v2', customPrice: 6000, effectiveDate: '2026-07-01', note: '中庆特惠价' },
+    ],
   },
   {
     id: 'b3',
@@ -345,6 +354,7 @@ export const mockBranches: Branch[] = [
     phone: '010-88889999',
     address: '北京市朝阳区建国门外大街1号国贸商城4F',
     priceOverrides: [],
+    upcomingOverrides: [],
   },
   {
     id: 'b4',
@@ -355,6 +365,7 @@ export const mockBranches: Branch[] = [
     phone: '010-66667777',
     address: '北京市朝阳区朝阳北路101号朝阳大悦城3F',
     priceOverrides: [],
+    upcomingOverrides: [],
   },
   {
     id: 'b5',
@@ -367,6 +378,7 @@ export const mockBranches: Branch[] = [
     priceOverrides: [
       { projectId: 'p10', versionId: 'v1', customPrice: 59800, effectiveDate: '2026-03-01', note: '区域推广价' },
     ],
+    upcomingOverrides: [],
   },
   {
     id: 'b6',
@@ -377,6 +389,7 @@ export const mockBranches: Branch[] = [
     phone: '028-88886666',
     address: '成都市锦江区春熙路东段1号IFS国际金融中心5F',
     priceOverrides: [],
+    upcomingOverrides: [],
   },
   {
     id: 'b7',
@@ -387,6 +400,7 @@ export const mockBranches: Branch[] = [
     phone: '020-88886666',
     address: '广州市天河区天河路208号天河城3F',
     priceOverrides: [],
+    upcomingOverrides: [],
   },
   {
     id: 'b8',
@@ -397,6 +411,7 @@ export const mockBranches: Branch[] = [
     phone: '0755-88889999',
     address: '深圳市罗湖区宝安南路1881号万象城3F',
     priceOverrides: [],
+    upcomingOverrides: [],
   },
   {
     id: 'b9',
@@ -407,6 +422,7 @@ export const mockBranches: Branch[] = [
     phone: '027-88886666',
     address: '武汉市洪山区珞喻路766号光谷世界城3F',
     priceOverrides: [],
+    upcomingOverrides: [],
   },
   {
     id: 'b10',
@@ -417,8 +433,44 @@ export const mockBranches: Branch[] = [
     phone: '025-88886666',
     address: '南京市秦淮区新街口步行街德基广场3F',
     priceOverrides: [],
+    upcomingOverrides: [],
   },
 ];
+
+function buildPricingChanges(baseOldPrice: number, baseNewPrice: number, floorPrice: number, versionId: string = 'v1'): PricingChangeDetail[] {
+  const changes: PricingChangeDetail[] = [];
+  const cityTiers: Array<[CityTier, number]> = [
+    ['tier1', 1.15],
+    ['tier2', 1.0],
+    ['tier3', 0.88],
+  ];
+  const storeLevels: Array<[StoreLevel, number]> = [
+    ['flagship', 1.1],
+    ['standard', 1.0],
+    ['community', 0.92],
+  ];
+  const doctorLevels: Array<[DoctorLevel, number]> = [
+    ['director', 1.25],
+    ['senior', 1.1],
+    ['attending', 1.0],
+    ['junior', 0.9],
+  ];
+
+  for (const [ct, ctMult] of cityTiers) {
+    for (const [sl, slMult] of storeLevels) {
+      for (const [dl, dlMult] of doctorLevels) {
+        const oldRaw = baseOldPrice * ctMult * slMult * dlMult;
+        const newRaw = baseNewPrice * ctMult * slMult * dlMult;
+        const oldPrice = Math.max(Math.round(oldRaw / 100) * 100, floorPrice);
+        const newPrice = Math.max(Math.round(newRaw / 100) * 100, floorPrice);
+        if (oldPrice !== newPrice) {
+          changes.push({ versionId, cityTier: ct, storeLevel: sl, doctorLevel: dl, oldPrice, newPrice });
+        }
+      }
+    }
+  }
+  return changes;
+}
 
 export const mockApprovals: Approval[] = [
   {
@@ -440,6 +492,8 @@ export const mockApprovals: Approval[] = [
         floorPrice: 5200,
         affectedBranches: ['b1', 'b2', 'b3', 'b4', 'b5', 'b6', 'b7', 'b8', 'b9', 'b10'],
         note: '中庆特惠8折，非常接近底价',
+        status: 'pending',
+        pricingChanges: buildPricingChanges(6800, 5440, 5200, 'v2'),
       },
       {
         id: 'ap1i2',
@@ -451,6 +505,8 @@ export const mockApprovals: Approval[] = [
         floorPrice: 5800,
         affectedBranches: ['b1', 'b2', 'b3', 'b4', 'b5', 'b6', 'b7', 'b8', 'b9', 'b10'],
         note: '中庆特惠8折',
+        status: 'pending',
+        pricingChanges: buildPricingChanges(7800, 6240, 5800, 'v2'),
       },
       {
         id: 'ap1i3',
@@ -462,6 +518,8 @@ export const mockApprovals: Approval[] = [
         floorPrice: 22000,
         affectedBranches: ['b1', 'b3', 'b8'],
         note: '仅旗舰院执行',
+        status: 'pending',
+        pricingChanges: buildPricingChanges(28800, 23040, 22000, 'v2'),
       },
       {
         id: 'ap1i4',
@@ -473,6 +531,8 @@ export const mockApprovals: Approval[] = [
         floorPrice: 52000,
         affectedBranches: ['b1', 'b3', 'b8'],
         note: '接近底价，请重点审核',
+        status: 'pending',
+        pricingChanges: buildPricingChanges(68000, 54400, 52000, 'v2'),
       },
     ],
     comments: [
@@ -500,6 +560,10 @@ export const mockApprovals: Approval[] = [
         floorPrice: 22000,
         affectedBranches: ['b2'],
         annotation: '毛利尚可，同意执行，季度后评估',
+        status: 'approved',
+        pricingChanges: [
+          { versionId: 'v1', cityTier: 'tier1', storeLevel: 'standard', doctorLevel: 'attending', oldPrice: 32000, newPrice: 27800 },
+        ],
       },
       {
         id: 'ap2i2',
@@ -511,6 +575,10 @@ export const mockApprovals: Approval[] = [
         floorPrice: 12800,
         affectedBranches: ['b2'],
         annotation: '同意',
+        status: 'approved',
+        pricingChanges: [
+          { versionId: 'v1', cityTier: 'tier1', storeLevel: 'standard', doctorLevel: 'attending', oldPrice: 18600, newPrice: 15800 },
+        ],
       },
     ],
     comments: [
@@ -538,6 +606,8 @@ export const mockApprovals: Approval[] = [
         floorPrice: 1280,
         affectedBranches: ['b1', 'b2', 'b3', 'b4', 'b5', 'b6', 'b7', 'b8'],
         annotation: '折扣率过高，建议维持1980',
+        status: 'rejected',
+        pricingChanges: buildPricingChanges(2580, 1580, 1280, 'v1'),
       },
     ],
     comments: [
@@ -658,5 +728,61 @@ export const mockChangeLogs: ChangeLog[] = [
     affectedBranches: ['全院'],
     affectedBranchesCount: 10,
     timestamp: '2026-01-01 00:00:00',
+  },
+  {
+    id: 'cl9',
+    operator: '李雅琴',
+    role: 'hq-admin',
+    action: 'update',
+    module: 'price',
+    targetId: 'v1-p7',
+    targetName: '超光子全模式 M22 价格矩阵修改',
+    oldValue: { projectName: '超光子全模式 M22', oldPrice: 2580, cityTier: 'tier1', storeLevel: 'flagship', doctorLevel: 'director' },
+    newValue: { projectName: '超光子全模式 M22', newPrice: 1980, cityTier: 'tier1', storeLevel: 'flagship', doctorLevel: 'director' },
+    affectedBranches: ['b1', 'b2', 'b3', 'b4', 'b7', 'b8'],
+    affectedBranchesCount: 6,
+    timestamp: '2026-06-15 10:30:00',
+  },
+  {
+    id: 'cl10',
+    operator: '李雅琴',
+    role: 'hq-admin',
+    action: 'update',
+    module: 'branch',
+    targetId: 'b2-p4',
+    targetName: '上海浦东陆家嘴院 热玛吉差异价变更',
+    oldValue: { projectName: '热玛吉五代 全面部', oldPrice: 32000, branchName: '上海浦东陆家嘴院' },
+    newValue: { projectName: '热玛吉五代 全面部', newPrice: 27800, branchName: '上海浦东陆家嘴院', note: '开业纪念价延长' },
+    affectedBranches: ['b2'],
+    affectedBranchesCount: 1,
+    timestamp: '2026-06-12 14:20:00',
+  },
+  {
+    id: 'cl11',
+    operator: '王明慧',
+    role: 'finance',
+    action: 'approve',
+    module: 'price',
+    targetId: 'ap2i1',
+    targetName: '审批单项通过-热玛吉五代',
+    oldValue: { projectName: '热玛吉五代 全面部', oldPrice: 32000, status: 'pending' },
+    newValue: { projectName: '热玛吉五代 全面部', newPrice: 27800, status: 'approved', annotation: '毛利尚可，同意执行' },
+    affectedBranches: ['b2'],
+    affectedBranchesCount: 1,
+    timestamp: '2026-06-13 16:40:00',
+  },
+  {
+    id: 'cl12',
+    operator: '王明慧',
+    role: 'finance',
+    action: 'approve',
+    module: 'price',
+    targetId: 'ap2i2',
+    targetName: '审批单项通过-超声炮黄金版',
+    oldValue: { projectName: '超声炮 黄金版', oldPrice: 18600, status: 'pending' },
+    newValue: { projectName: '超声炮 黄金版', newPrice: 15800, status: 'approved', annotation: '同意' },
+    affectedBranches: ['b2'],
+    affectedBranchesCount: 1,
+    timestamp: '2026-06-13 16:42:00',
   },
 ];

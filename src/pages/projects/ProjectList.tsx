@@ -33,6 +33,7 @@ import {
   CATEGORY_LABELS,
   CATEGORY_COLORS,
   MATERIAL_BRANDS,
+  APPLICABLE_PARTS,
   type Project,
   type ProjectCategory,
 } from '@/types';
@@ -53,7 +54,8 @@ export default function ProjectList() {
 
   const [searchText, setSearchText] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<ProjectCategory | 'all'>('all');
-  const [brandFilter, setBrandFilter] = useState<string>('all');
+  const [brandFilter, setBrandFilter] = useState<string[]>([]);
+  const [partsFilter, setPartsFilter] = useState<string[]>([]);
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
 
   const [formOpen, setFormOpen] = useState(false);
@@ -69,13 +71,20 @@ export default function ProjectList() {
 
   const filteredProjects = useMemo(() => {
     return projects.filter((p) => {
-      if (searchText && !p.name.toLowerCase().includes(searchText.toLowerCase())) return false;
+      if (searchText) {
+        const kw = searchText.toLowerCase();
+        const matchName = p.name.toLowerCase().includes(kw);
+        const matchBrand = p.materialBrand.toLowerCase().includes(kw);
+        const matchDesc = p.description?.toLowerCase().includes(kw);
+        if (!matchName && !matchBrand && !matchDesc) return false;
+      }
       if (categoryFilter !== 'all' && p.category !== categoryFilter) return false;
-      if (brandFilter !== 'all' && p.materialBrand !== brandFilter) return false;
+      if (brandFilter.length > 0 && !brandFilter.includes(p.materialBrand)) return false;
+      if (partsFilter.length > 0 && !partsFilter.some((part) => p.applicableParts.includes(part))) return false;
       if (statusFilter !== 'all' && p.status !== statusFilter) return false;
       return true;
     });
-  }, [projects, searchText, categoryFilter, brandFilter, statusFilter]);
+  }, [projects, searchText, categoryFilter, brandFilter, partsFilter, statusFilter]);
 
   const paginatedProjects = useMemo(() => {
     const start = (page - 1) * pageSize;
@@ -103,7 +112,8 @@ export default function ProjectList() {
   const handleResetFilters = () => {
     setSearchText('');
     setCategoryFilter('all');
-    setBrandFilter('all');
+    setBrandFilter([]);
+    setPartsFilter([]);
     setStatusFilter('all');
     setPage(1);
     message.info('已重置筛选条件');
@@ -123,6 +133,23 @@ export default function ProjectList() {
   };
 
   const formatPrice = (n: number) => `¥${n.toLocaleString()}`;
+
+  const highlightText = (text: string, keyword: string) => {
+    if (!keyword.trim()) return text;
+    const lowerText = text.toLowerCase();
+    const lowerKeyword = keyword.toLowerCase();
+    const index = lowerText.indexOf(lowerKeyword);
+    if (index === -1) return text;
+    return (
+      <>
+        {text.slice(0, index)}
+        <mark className="bg-brand-gold-200/60 text-brand-navy-700 px-0.5 rounded font-semibold">
+          {text.slice(index, index + keyword.length)}
+        </mark>
+        {text.slice(index + keyword.length)}
+      </>
+    );
+  };
 
   return (
     <div className="p-6 space-y-5 bg-slate-50 min-h-screen">
@@ -164,12 +191,12 @@ export default function ProjectList() {
           <Filter size={16} className="text-brand-gold-600" />
           <span className="font-medium text-brand-navy-500">筛选条件</span>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
           <div className="lg:col-span-2">
-            <label className="block text-sm text-slate-500 mb-1.5">项目名称</label>
+            <label className="block text-sm text-slate-500 mb-1.5">项目名称/品牌</label>
             <Input
               prefix={<Search size={16} className="text-slate-400" />}
-              placeholder="搜索项目名称..."
+              placeholder="搜索项目名称、品牌..."
               value={searchText}
               onChange={(e) => {
                 setSearchText(e.target.value);
@@ -203,6 +230,7 @@ export default function ProjectList() {
           <div>
             <label className="block text-sm text-slate-500 mb-1.5">产品品牌</label>
             <Select
+              mode="multiple"
               value={brandFilter}
               onChange={(v) => {
                 setBrandFilter(v);
@@ -210,14 +238,37 @@ export default function ProjectList() {
               }}
               size="large"
               className="!w-full !rounded-xl"
-              allowClear
+              placeholder="选择品牌"
               showSearch
               optionFilterProp="children"
+              maxTagCount={2}
             >
-              <Option value="all">全部品牌</Option>
               {uniqueBrands.map((b) => (
                 <Option key={b} value={b}>
                   {b}
+                </Option>
+              ))}
+            </Select>
+          </div>
+          <div>
+            <label className="block text-sm text-slate-500 mb-1.5">适用部位</label>
+            <Select
+              mode="multiple"
+              value={partsFilter}
+              onChange={(v) => {
+                setPartsFilter(v);
+                setPage(1);
+              }}
+              size="large"
+              className="!w-full !rounded-xl"
+              placeholder="选择部位"
+              showSearch
+              optionFilterProp="children"
+              maxTagCount={2}
+            >
+              {APPLICABLE_PARTS.map((part) => (
+                <Option key={part} value={part}>
+                  {part}
                 </Option>
               ))}
             </Select>
@@ -276,9 +327,14 @@ export default function ProjectList() {
               分类：{CATEGORY_LABELS[categoryFilter]}
             </Tag>
           )}
-          {brandFilter !== 'all' && (
-            <Tag closable onClose={() => setBrandFilter('all')} color="geekblue">
-              品牌：{brandFilter}
+          {brandFilter.length > 0 && (
+            <Tag closable onClose={() => setBrandFilter([])} color="geekblue">
+              品牌：{brandFilter.length} 个
+            </Tag>
+          )}
+          {partsFilter.length > 0 && (
+            <Tag closable onClose={() => setPartsFilter([])} color="purple">
+              部位：{partsFilter.length} 个
             </Tag>
           )}
           {searchText && (
@@ -349,7 +405,7 @@ export default function ProjectList() {
                                   p.status === 'inactive' ? 'text-slate-400' : 'text-slate-800'
                                 }`}
                               >
-                                {p.name}
+                                {highlightText(p.name, searchText)}
                               </div>
                               {p.description && (
                                 <Tooltip title={p.description}>
@@ -371,7 +427,9 @@ export default function ProjectList() {
                           </Tag>
                         </td>
                         <td className="table-cell">
-                          <span className="text-slate-700 font-medium">{p.materialBrand}</span>
+                          <span className="text-slate-700 font-medium">
+                            {highlightText(p.materialBrand, searchText)}
+                          </span>
                         </td>
                         <td className="table-cell">
                           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 text-sm font-medium">

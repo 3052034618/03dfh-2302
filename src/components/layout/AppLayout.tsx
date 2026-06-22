@@ -23,9 +23,9 @@ import {
   ShieldCheck,
   Store,
   Bell,
-  Search,
 } from 'lucide-react';
-import { Dropdown, Avatar, Badge, Input, Tooltip, Modal } from 'antd';
+import { Dropdown, Avatar, Badge, Tooltip, Modal } from 'antd';
+import GlobalSearch from '@/components/GlobalSearch';
 import type { MenuProps } from 'antd';
 import { useAppStore } from '@/store';
 import type { UserRole } from '@/types';
@@ -266,12 +266,7 @@ export default function AppLayout() {
           </nav>
 
           <div className="flex-1 max-w-md mx-auto">
-            <Input
-              prefix={<Search className="w-4 h-4 text-slate-400" />}
-              placeholder="搜索项目、版本、院区..."
-              size="large"
-              className="!rounded-xl !bg-slate-50 !border-slate-200 focus:!border-brand-gold-500 focus:!ring-brand-gold-100"
-            />
+            <GlobalSearch />
           </div>
 
           <div className="flex items-center gap-3">

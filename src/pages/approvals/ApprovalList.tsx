@@ -12,7 +12,7 @@ import type { Dayjs } from 'dayjs';
 
 const { RangePicker } = DatePicker;
 
-type TabKey = 'pending' | 'approved' | 'rejected';
+type TabKey = 'pending' | 'approved' | 'rejected' | 'partial';
 
 export default function ApprovalList() {
   const navigate = useNavigate();
@@ -50,6 +50,18 @@ export default function ApprovalList() {
           待我审批
           <Tag color="warning" className="ml-1 border-0">
             {approvals.filter((a) => a.status === 'pending').length}
+          </Tag>
+        </span>
+      ),
+    },
+    {
+      key: 'partial' as TabKey,
+      label: (
+        <span className="flex items-center gap-2">
+          <CheckCircleOutlined className="text-blue-500" />
+          部分通过
+          <Tag color="processing" className="ml-1 border-0">
+            {approvals.filter((a) => a.status === 'partial').length}
           </Tag>
         </span>
       ),
@@ -131,15 +143,40 @@ export default function ApprovalList() {
       render: (time) => <span className="text-slate-600">{time}</span>,
     },
     {
-      title: '变更项目数',
+      title: '项目统计',
       key: 'itemsCount',
-      width: 120,
+      width: 200,
       align: 'center',
-      render: (_, record) => (
-        <Tag color="blue" className="border-0 font-medium">
-          {record.items.length} 项
-        </Tag>
-      ),
+      render: (_, record) => {
+        const total = record.items.length;
+        const approved = record.items.filter((i) => i.status === 'approved').length;
+        const rejected = record.items.filter((i) => i.status === 'rejected').length;
+        const pending = record.items.filter((i) => i.status === 'pending').length;
+        return (
+          <div className="flex flex-col items-center gap-1">
+            <div className="flex items-center gap-1.5">
+              <span className="text-sm font-semibold text-slate-700">共 {total} 项</span>
+            </div>
+            <div className="flex items-center gap-2 text-xs">
+              {approved > 0 && (
+                <span className="text-emerald-600 font-medium">
+                  ✓ {approved}
+                </span>
+              )}
+              {rejected > 0 && (
+                <span className="text-rose-600 font-medium">
+                  ✕ {rejected}
+                </span>
+              )}
+              {pending > 0 && (
+                <span className="text-amber-600 font-medium">
+                  ○ {pending}
+                </span>
+              )}
+            </div>
+          </div>
+        );
+      },
     },
     {
       title: '影响院区数',

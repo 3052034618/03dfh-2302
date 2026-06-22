@@ -102,6 +102,9 @@ export default function VersionList() {
     if (!submittingVersion) return;
     try {
       const values = await submitForm.validateFields();
+      const effectiveDate = values.effectiveDate
+        ? values.effectiveDate.format('YYYY-MM-DD')
+        : submittingVersion.effectiveDate;
       const items = Object.keys(submittingVersion.pricing).map((pid) => {
         const project = projects.find((p) => p.id === pid);
         const pricing = submittingVersion.pricing[pid];
@@ -118,13 +121,15 @@ export default function VersionList() {
           floorPrice: project?.floorPrice || 0,
           affectedBranches: useAppStore.getState().branches.map((b) => b.id),
           note: '',
+          status: 'pending' as const,
+          pricingChanges: [],
         };
       });
       submitApproval({
         title: `${submittingVersion.name} 价格审批`,
         submitter: currentUser?.name || '系统',
         reason: values.reason,
-        effectiveDate: submittingVersion.effectiveDate,
+        effectiveDate,
         items,
       });
       updatePriceVersion(submittingVersion.id, { status: 'pending' });
@@ -411,6 +416,17 @@ export default function VersionList() {
           </div>
         )}
         <Form form={submitForm} layout="vertical">
+          <Form.Item
+            label="生效日期"
+            name="effectiveDate"
+            rules={[{ required: true, message: '请选择生效日期' }]}
+          >
+            <DatePicker
+              className="w-full"
+              placeholder="请选择审批通过后的生效日期"
+              disabledDate={(current) => current && current < dayjs().startOf('day')}
+            />
+          </Form.Item>
           <Form.Item
             label="调整原因"
             name="reason"

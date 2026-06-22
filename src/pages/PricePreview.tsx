@@ -16,6 +16,9 @@ import {
   Avatar,
   Divider,
   Badge,
+  Input,
+  Slider,
+  Segmented,
 } from 'antd';
 import {
   DownloadOutlined,
@@ -29,12 +32,16 @@ import {
   ScissorOutlined,
   CrownOutlined,
   StarOutlined,
+  SearchOutlined,
+  ArrowRightOutlined,
+  CalendarOutlined,
 } from '@ant-design/icons';
 import { motion, AnimatePresence } from 'framer-motion';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { useAppStore } from '@/store';
+import type { ProjectPriceResult } from '@/store';
 import {
   CATEGORY_LABELS,
   CATEGORY_COLORS,
@@ -42,6 +49,7 @@ import {
   Branch,
   Project,
 } from '@/types';
+import dayjs from 'dayjs';
 
 const { Option } = Select;
 
@@ -61,6 +69,8 @@ const CATEGORY_TEXT_COLORS: Record<ProjectCategory, string> = {
 
 const ALL_CATEGORIES: (ProjectCategory | 'all')[] = ['all', 'hyaluronic', 'photoelectric', 'skin', 'anti-aging'];
 
+type ViewMode = 'current' | 'upcoming';
+
 export default function PricePreview() {
   const currentUser = useAppStore((s) => s.currentUser);
   const projects = useAppStore((s) => s.projects);
@@ -75,6 +85,9 @@ export default function PricePreview() {
     isStoreManager && currentUser?.branchId ? currentUser.branchId : accessibleBranches[0]?.id || ''
   );
   const [activeCategory, setActiveCategory] = useState<ProjectCategory | 'all'>('all');
+  const [searchText, setSearchText] = useState('');
+  const [priceRange, setPriceRange] = useState<[number, number]>([0, 100000]);
+  const [viewMode, setViewMode] = useState<ViewMode>('upcoming');
   const [exportingType, setExportingType] = useState<string | null>(null);
   const printRef = useRef<HTMLDivElement>(null);
 
@@ -88,16 +101,52 @@ export default function PricePreview() {
     [priceVersions]
   );
 
+  const priceStats = useMemo(() => {
+    let minPrice = Infinity;
+    let maxPrice = -Infinity;
+    projects.forEach((p) => {
+      if (p.status !== 'active') return;
+      const priceResult = getProjectPriceForBranch(p.id, selectedBranch?.id || '', effectiveVersion?.id);
+      const currentPrice = priceResult.currentPrice;
+      const upcomingPrice = priceResult.upcomingPrice;
+      if (currentPrice < minPrice) minPrice = currentPrice;
+      if (currentPrice > maxPrice) maxPrice = currentPrice;
+      if (upcomingPrice !== undefined && upcomingPrice < minPrice) minPrice = upcomingPrice;
+      if (upcomingPrice !== undefined && upcomingPrice > maxPrice) maxPrice = upcomingPrice;
+    });
+    if (minPrice === Infinity) minPrice = 0;
+    if (maxPrice === -Infinity) maxPrice = 100000;
+    return { minPrice: Math.floor(minPrice / 100) * 100, maxPrice: Math.ceil(maxPrice / 100) * 100 };
+  }, [projects, selectedBranch, effectiveVersion, getProjectPriceForBranch]);
+
   const filteredProjects = useMemo(() => {
     return projects.filter((p) => {
       if (p.status !== 'active') return false;
       if (activeCategory !== 'all' && p.category !== activeCategory) return false;
+
+      if (searchText.trim()) {
+        const kw = searchText.toLowerCase();
+        const matchName = p.name.toLowerCase().includes(kw);
+        const matchBrand = p.materialBrand.toLowerCase().includes(kw);
+        const matchDesc = p.description?.toLowerCase().includes(kw);
+        if (!matchName && !matchBrand && !matchDesc) return false;
+      }
+
+      const priceResult = getProjectPriceForBranch(p.id, selectedBranch?.id || '', effectiveVersion?.id);
+      const prices = [priceResult.currentPrice];
+      if (priceResult.upcomingPrice !== undefined) prices.push(priceResult.upcomingPrice);
+      const minP = Math.min(...prices);
+      const maxP = Math.max(...prices);
+      if (maxP < priceRange[0] || minP > priceRange[1]) return false;
+
       return true;
     });
-  }, [projects, activeCategory]);
+  }, [projects, activeCategory, searchText, priceRange, selectedBranch, effectiveVersion, getProjectPriceForBranch]);
 
-  const getProjectFinalPrice = (project: Project) => {
-    if (!selectedBranch) return project.basePrice;
+  const getProjectPriceInfo = (project: Project): ProjectPriceResult => {
+    if (!selectedBranch) {
+      return { currentPrice: project.basePrice, isUpcoming: false };
+    }
     return getProjectPriceForBranch(project.id, selectedBranch.id, effectiveVersion?.id);
   };
 
@@ -126,17 +175,25 @@ export default function PricePreview() {
     setExportingType('excel');
     try {
       const data = filteredProjects.map((p) => {
-        const finalPrice = getProjectFinalPrice(p);
-        const hasDiscount = finalPrice < p.basePrice;
+        const priceInfo = getProjectPriceInfo(p);
+        const currentPrice = priceInfo.currentPrice;
+        const upcomingPrice = priceInfo.upcomingPrice;
+        const upcomingDate = priceInfo.upcomingDate;
+        const hasUpcoming = priceInfo.isUpcoming && upcomingPrice !== undefined;
+        const hasDiscount = hasUpcoming ? upcomingPrice < p.basePrice : currentPrice < p.basePrice;
+        const basePrice = p.basePrice;
+
         return {
           分类: CATEGORY_LABELS[p.category],
           项目名称: p.name,
           品牌: p.materialBrand,
           疗程: `${p.sessions}次`,
           适用部位: p.applicableParts.join('、'),
-          原价: p.basePrice,
-          最终价: finalPrice,
-          折扣: hasDiscount ? `${((finalPrice / p.basePrice) * 10).toFixed(1)}折` : '原价',
+          原价: basePrice,
+          当前价: currentPrice,
+          即将生效价: hasUpcoming ? upcomingPrice : '-',
+          生效日期: hasUpcoming && upcomingDate ? dayjs(upcomingDate).format('YYYY年MM月DD日') : '-',
+          折扣: hasDiscount ? `${((Math.min(currentPrice, upcomingPrice || currentPrice) / basePrice) * 10).toFixed(1)}折` : '原价',
           底价: p.floorPrice,
         };
       });
@@ -144,7 +201,8 @@ export default function PricePreview() {
       const ws = XLSX.utils.json_to_sheet(data);
       ws['!cols'] = [
         { wch: 10 }, { wch: 28 }, { wch: 14 }, { wch: 8 },
-        { wch: 30 }, { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 12 },
+        { wch: 30 }, { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 16 },
+        { wch: 10 }, { wch: 12 },
       ];
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, '价目表');
@@ -200,6 +258,13 @@ export default function PricePreview() {
     }, 300);
   };
 
+  const handleResetFilters = () => {
+    setSearchText('');
+    setPriceRange([priceStats.minPrice, priceStats.maxPrice]);
+    setActiveCategory('all');
+    message.info('已重置筛选条件');
+  };
+
   const exportMenu = {
     items: [
       {
@@ -248,6 +313,13 @@ export default function PricePreview() {
     show: { opacity: 1, y: 0, scale: 1, transition: { duration: 0.3, ease: 'easeOut' } },
   };
 
+  const upcomingCount = useMemo(() => {
+    return filteredProjects.filter((p) => {
+      const info = getProjectPriceInfo(p);
+      return info.isUpcoming && info.upcomingPrice !== undefined;
+    }).length;
+  }, [filteredProjects, getProjectPriceInfo]);
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -282,6 +354,12 @@ export default function PricePreview() {
               {effectiveVersion && (
                 <Tag color="green" className="border-0">
                   当前版本：{effectiveVersion.name}
+                </Tag>
+              )}
+              {upcomingCount > 0 && viewMode === 'upcoming' && (
+                <Tag color="gold" className="border-0">
+                  <CalendarOutlined className="mr-1" />
+                  {upcomingCount} 项即将调价
                 </Tag>
               )}
             </div>
@@ -368,6 +446,12 @@ export default function PricePreview() {
                     <p className="text-xs text-slate-500">项目总数</p>
                     <p className="text-lg font-bold text-indigo-600">{filteredProjects.length}</p>
                   </div>
+                  {viewMode === 'upcoming' && (
+                    <div className="text-center px-3 py-1.5 bg-amber-50 rounded-lg border border-amber-100">
+                      <p className="text-xs text-amber-600">即将调价</p>
+                      <p className="text-lg font-bold text-amber-600">{upcomingCount}</p>
+                    </div>
+                  )}
                 </div>
               </div>
             </Card>
@@ -378,7 +462,68 @@ export default function PricePreview() {
           className="shadow-sm border border-slate-200/60 bg-white/60 backdrop-blur-md"
           styles={{ body: { padding: 0 } }}
         >
-          <div className="px-6 pt-4 border-b border-slate-100/70">
+          <div className="px-6 pt-4">
+            <div className="flex flex-col lg:flex-row lg:items-center gap-4 mb-4">
+              <div className="flex-1 lg:max-w-xs">
+                <Input
+                  prefix={<SearchOutlined className="text-slate-400" />}
+                  placeholder="搜索项目名称、品牌..."
+                  value={searchText}
+                  onChange={(e) => setSearchText(e.target.value)}
+                  allowClear
+                  size="large"
+                  className="!rounded-xl"
+                />
+              </div>
+
+              <div className="flex-1 lg:max-w-sm">
+                <div className="flex items-center gap-3">
+                  <span className="text-sm text-slate-500 whitespace-nowrap">价格区间：</span>
+                  <div className="flex-1">
+                    <Slider
+                      range
+                      min={priceStats.minPrice}
+                      max={priceStats.maxPrice}
+                      step={100}
+                      value={priceRange}
+                      onChange={(val) => setPriceRange(val as [number, number])}
+                      tooltip={{
+                        formatter: (val) => `¥${val?.toLocaleString()}`,
+                      }}
+                      styles={{
+                        track: {
+                          background: 'linear-gradient(90deg, #C9A96E, #E7D6B0)',
+                        },
+                        handle: {
+                          borderColor: '#C9A96E',
+                        },
+                      }}
+                    />
+                  </div>
+                  <div className="text-xs text-slate-500 whitespace-nowrap min-w-[100px] text-right">
+                    ¥{priceRange[0].toLocaleString()} - ¥{priceRange[1].toLocaleString()}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Segmented
+                  value={viewMode}
+                  onChange={(val) => setViewMode(val as ViewMode)}
+                  options={[
+                    { label: '当前执行价', value: 'current' },
+                    { label: '含即将生效', value: 'upcoming' },
+                  ]}
+                  size="large"
+                />
+                <Button size="large" onClick={handleResetFilters}>
+                  重置筛选
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          <div className="px-6 border-b border-slate-100/70">
             <Tabs
               activeKey={activeCategory}
               onChange={(k) => setActiveCategory(k as ProjectCategory | 'all')}
@@ -393,6 +538,11 @@ export default function PricePreview() {
               <div className="print-only mb-6 pb-4 border-b-2 border-dashed border-slate-300 hidden">
                 <h2 className="text-2xl font-bold text-slate-900 text-center mb-2">{selectedBranch.name}</h2>
                 <p className="text-center text-slate-600">项目价目表 · 生成日期：{new Date().toLocaleDateString('zh-CN')}</p>
+                {viewMode === 'upcoming' && upcomingCount > 0 && (
+                  <p className="text-center text-amber-600 text-sm mt-2">
+                    含 {upcomingCount} 项即将生效价格
+                  </p>
+                )}
               </div>
             )}
 
@@ -404,11 +554,11 @@ export default function PricePreview() {
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
                 >
-                  <Empty description="该分类暂无项目" className="py-16" />
+                  <Empty description="暂无符合条件的项目" className="py-16" />
                 </motion.div>
               ) : (
                 <motion.div
-                  key={activeCategory}
+                  key={`${activeCategory}-${viewMode}-${searchText}-${priceRange.join('-')}`}
                   variants={cardContainer}
                   initial="hidden"
                   animate="show"
@@ -416,25 +566,40 @@ export default function PricePreview() {
                 >
                   <Row gutter={[20, 20]}>
                     {filteredProjects.map((project) => {
-                      const finalPrice = getProjectFinalPrice(project);
-                      const hasDiscount = finalPrice < project.basePrice;
-                      const discountRate = hasDiscount ? (finalPrice / project.basePrice) * 10 : 10;
-                      const floorGap = finalPrice - project.floorPrice;
+                      const priceInfo = getProjectPriceInfo(project);
+                      const currentPrice = priceInfo.currentPrice;
+                      const upcomingPrice = priceInfo.upcomingPrice;
+                      const upcomingDate = priceInfo.upcomingDate;
+                      const hasUpcoming = priceInfo.isUpcoming && upcomingPrice !== undefined && viewMode === 'upcoming';
+
+                      const displayPrice = hasUpcoming ? upcomingPrice : currentPrice;
+                      const hasDiscount = displayPrice < project.basePrice;
+                      const discountRate = hasDiscount ? (displayPrice / project.basePrice) * 10 : 10;
+                      const floorGap = displayPrice - project.floorPrice;
                       const nearFloor = floorGap / project.floorPrice < 0.1;
+                      const priceUp = hasUpcoming && upcomingPrice !== undefined && upcomingPrice > currentPrice;
 
                       return (
                         <Col xs={24} sm={12} lg={8} xl={6} key={project.id}>
                           <motion.div variants={cardItem} whileHover={{ y: -4 }}>
                             <Card
                               hoverable
-                              className="h-full overflow-hidden group border-0 shadow-md shadow-slate-200/60 rounded-2xl"
+                              className={`h-full overflow-hidden group border-0 shadow-md shadow-slate-200/60 rounded-2xl ${
+                                hasUpcoming ? 'ring-2 ring-amber-200/60' : ''
+                              }`}
                               styles={{ body: { padding: 0 } }}
                               style={{
-                                background: 'rgba(255, 255, 255, 0.65)',
+                                background: hasUpcoming
+                                  ? 'linear-gradient(180deg, rgba(255, 251, 235, 0.85) 0%, rgba(255, 255, 255, 0.85) 100%)'
+                                  : 'rgba(255, 255, 255, 0.65)',
                                 backdropFilter: 'blur(16px)',
                                 WebkitBackdropFilter: 'blur(16px)',
-                                border: '1px solid rgba(255, 255, 255, 0.8)',
-                                boxShadow: '0 8px 32px rgba(31, 38, 135, 0.08)',
+                                border: hasUpcoming
+                                  ? '1px solid rgba(251, 191, 36, 0.3)'
+                                  : '1px solid rgba(255, 255, 255, 0.8)',
+                                boxShadow: hasUpcoming
+                                  ? '0 8px 32px rgba(251, 191, 36, 0.15)'
+                                  : '0 8px 32px rgba(31, 38, 135, 0.08)',
                               }}
                             >
                               <div className="relative aspect-[4/3] overflow-hidden bg-gradient-to-br from-slate-100 to-slate-200">
@@ -461,6 +626,13 @@ export default function PricePreview() {
                                     <Badge.Ribbon
                                       text={`${discountRate.toFixed(1)}折`}
                                       color="magenta"
+                                      className="!font-bold"
+                                    />
+                                  )}
+                                  {hasUpcoming && (
+                                    <Badge.Ribbon
+                                      text="即将调价"
+                                      color="gold"
                                       className="!font-bold"
                                     />
                                   )}
@@ -511,35 +683,79 @@ export default function PricePreview() {
 
                                 <Divider className="!my-2 !border-slate-100" />
 
-                                <div className="flex items-end justify-between gap-2">
-                                  <div>
-                                    {hasDiscount && (
-                                      <div className="text-xs text-slate-400 line-through mb-0.5">
-                                        ¥{project.basePrice.toLocaleString()}
+                                {hasUpcoming ? (
+                                  <div className="space-y-2">
+                                    <div className="flex items-center justify-between gap-2">
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-[11px] text-slate-500">当前执行价</span>
                                       </div>
-                                    )}
-                                    <div className="flex items-baseline gap-1">
-                                      <span className="text-xs text-rose-500 font-semibold">¥</span>
-                                      <span className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-rose-500 via-pink-500 to-fuchsia-500 leading-none">
-                                        {finalPrice.toLocaleString()}
-                                      </span>
+                                      <div className="flex items-center gap-1">
+                                        <span className="text-xs text-slate-400 line-through">
+                                          ¥{project.basePrice.toLocaleString()}
+                                        </span>
+                                        <span className="text-base font-bold text-slate-500">
+                                          ¥{currentPrice.toLocaleString()}
+                                        </span>
+                                      </div>
                                     </div>
-                                    {nearFloor && (
-                                      <div className="mt-1">
-                                        <Tag color="warning" className="border-0 text-[10px] !mx-0 py-0 px-1.5">
-                                          接近底价
+
+                                    <div className="flex items-center justify-center py-1">
+                                      <div className={`w-6 h-6 rounded-full flex items-center justify-center ${
+                                        priceUp ? 'bg-rose-100' : 'bg-emerald-100'
+                                      }`}>
+                                        <ArrowRightOutlined className={`w-3.5 h-3.5 ${
+                                          priceUp ? 'text-rose-500 rotate-[-45deg]' : 'text-emerald-500 rotate-45'
+                                        }`} />
+                                      </div>
+                                    </div>
+
+                                    <div className="flex items-end justify-between gap-2">
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-xs font-semibold text-amber-600">即将生效</span>
+                                        <Tag color="gold" className="border-0 text-[10px] !mx-0 px-1.5 py-0">
+                                          <CalendarOutlined />
+                                          {upcomingDate ? dayjs(upcomingDate).format('M月D日') : '即将生效'}
                                         </Tag>
                                       </div>
-                                    )}
-                                  </div>
-
-                                  <div className="text-right shrink-0">
-                                    <div className="text-[10px] text-slate-400 mb-0.5">底价</div>
-                                    <div className="text-sm font-semibold text-slate-600">
-                                      ¥{project.floorPrice.toLocaleString()}
+                                      <div className="flex items-baseline gap-1">
+                                        <span className="text-xs text-amber-600 font-semibold">¥</span>
+                                        <span className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 leading-none">
+                                          {upcomingPrice?.toLocaleString()}
+                                        </span>
+                                      </div>
                                     </div>
                                   </div>
-                                </div>
+                                ) : (
+                                  <div className="flex items-end justify-between gap-2">
+                                    <div>
+                                      {hasDiscount && (
+                                        <div className="text-xs text-slate-400 line-through mb-0.5">
+                                          ¥{project.basePrice.toLocaleString()}
+                                        </div>
+                                      )}
+                                      <div className="flex items-baseline gap-1">
+                                        <span className="text-xs text-rose-500 font-semibold">¥</span>
+                                        <span className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-rose-500 via-pink-500 to-fuchsia-500 leading-none">
+                                          {currentPrice.toLocaleString()}
+                                        </span>
+                                      </div>
+                                      {nearFloor && (
+                                        <div className="mt-1">
+                                          <Tag color="warning" className="border-0 text-[10px] !mx-0 py-0 px-1.5">
+                                            接近底价
+                                          </Tag>
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    <div className="text-right shrink-0">
+                                      <div className="text-[10px] text-slate-400 mb-0.5">底价</div>
+                                      <div className="text-sm font-semibold text-slate-600">
+                                        ¥{project.floorPrice.toLocaleString()}
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
                               </div>
                             </Card>
                           </motion.div>

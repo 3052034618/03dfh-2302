@@ -116,9 +116,10 @@ export default function BranchDiff() {
     return currentOverrides.map((o, idx) => {
       const project = projects.find((p) => p.id === o.projectId);
       const version = priceVersions.find((v) => v.id === o.versionId);
-      const standardPrice = selectedBranch
+      const priceResult = selectedBranch
         ? getProjectPriceForBranch(o.projectId, selectedBranch.id, o.versionId)
-        : project?.basePrice || 0;
+        : null;
+      const standardPrice = priceResult ? priceResult.currentPrice : project?.basePrice || 0;
       return {
         key: `${o.projectId}-${o.versionId}-${idx}`,
         projectId: o.projectId,
@@ -801,7 +802,8 @@ export default function BranchDiff() {
               const project = projects.find((p) => p.id === pid);
               let standard = 0;
               if (pid && vid && selectedBranch) {
-                standard = getProjectPriceForBranch(pid, selectedBranch.id, vid);
+                const priceResult = getProjectPriceForBranch(pid, selectedBranch.id, vid);
+                standard = priceResult.currentPrice;
               }
               return (
                 <div>
